@@ -1,34 +1,90 @@
-const express = require('express')
-const path = require('path')
-const app = express()
-const PORT = process.env.PORT || 4000
-const server = app.listen(PORT, () => console.log(`💬 server on port ${PORT}`))
+const socket = io()
 
-const io = require('socket.io')(server)
+const clientsTotal = document.getElementById('client-total')
 
-app.use(express.static(path.join(__dirname, 'public')))
+const messageContainer = document.getElementById('message-container')
+const nameInput = document.getElementById('name-input')
+const messageForm = document.getElementById('message-form')
+const messageInput = document.getElementById('message-input')
 
-let socketsConected = new Set()
+const messageTone = new Audio('/message-tone.mp3')
 
-io.on('connection', onConnected)
+messageForm.addEventListener('submit', (e) => {
+  e.preventDefault()
+  sendMessage()
+})
 
-function onConnected(socket) {
-  console.log('Socket connected', socket.id)
-  socketsConected.add(socket.id)
-  io.emit('clients-total', socketsConected.size)
+socket.on('clients-total', (data) => {
+  clientsTotal.innerText = `Total Clients: ${data}`
+})
 
-  socket.on('disconnect', () => {
-    console.log('Socket disconnected', socket.id)
-    socketsConected.delete(socket.id)
-    io.emit('clients-total', socketsConected.size)
+function sendMessage() {
+  if (messageInput.value === '') return
+  // console.log(messageInput.value)
+  const data = {
+    name: nameInput.value,
+    message: messageInput.value,
+    dateTime: new Date(),
+  }
+  socket.emit('message', data)
+  addMessageToUI(true, data)
+  messageInput.value = ''
+}
+
+socket.on('chat-message', (data) => {
+  // console.log(data)
+  messageTone.play()
+  addMessageToUI(false, data)
+})
+
+function addMessageToUI(isOwnMessage, data) {
+  clearFeedback()
+  const element = `
+      <li class="${isOwnMessage ? 'message-right' : 'message-left'}">
+          <p class="message">
+            ${data.message}
+            <span>${data.name} ● ${moment(data.dateTime).fromNow()}</span>
+          </p>
+        </li>
+        `
+
+  messageContainer.innerHTML += element
+  scrollToBottom()
+}
+
+function scrollToBottom() {
+  messageContainer.scrollTo(0, messageContainer.scrollHeight)
+}
+
+messageInput.addEventListener('focus', (e) => {
+  socket.emit('feedback', {
+    feedback: `✍️ ${nameInput.value} is typing a message`,
   })
+})
 
-  socket.on('message', (data) => {
-    // console.log(data)
-    socket.broadcast.emit('chat-message', data)
+messageInput.addEventListener('keypress', (e) => {
+  socket.emit('feedback', {
+    feedback: `✍️ ${nameInput.value} is typing a message`,
   })
+})
+messageInput.addEventListener('blur', (e) => {
+  socket.emit('feedback', {
+    feedback: '',
+  })
+})
 
-  socket.on('feedback', (data) => {
-    socket.broadcast.emit('feedback', data)
+socket.on('feedback', (data) => {
+  clearFeedback()
+  const element = `
+        <li class="message-feedback">
+          <p class="feedback" id="feedback">${data.feedback}</p>
+        </li>
+  `
+  messageContainer.innerHTML += element
+})
+
+function clearFeedback() {
+  document.querySelectorAll('li.message-feedback').forEach((element) => {
+    element.parentNode.removeChild(element)
   })
 }
